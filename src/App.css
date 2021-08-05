@@ -1,0 +1,9 @@
+.canvasWrapper {
+    position: relative;
+    width: 50vw;
+}
+
+.videoCanvas {
+    width: 100%;
+    height: 100%;
+}

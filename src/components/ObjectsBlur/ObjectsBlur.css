@@ -1,0 +1,19 @@
+.container {
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.canvas {
+  height: 100%;
+  position: absolute;
+  top: 0;
+  width: 100%;
+  left: 0;
+}
+
+.hidden {
+  display: none;
+}
