@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState, useRef, MutableRefObject } from 'react';
 
 import videoExample from './assets/example.mp4';
 import ObjectsBlur from './components/ObjectsBlur/ObjectsBlur';
@@ -11,157 +11,116 @@ import { VIDEO_METADATA_INFO } from './constants/video';
 
 import './App.css';
 
-interface AppState {
-  time: number;
-  isLoaded: boolean;
-  frame: number;
-  isPlaying: boolean;
-  censureType: OBJECTS_CENSURE_TYPE,
-}
+function App() {
+  const [time, setTime] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [frame, setFrame] = useState(1);
+  const [censureType, setCensureType] = useState(OBJECTS_CENSURE_TYPE.GAUSS);
+  const [isFrameHasBlurOutObjects, setIsFrameHasBlurOutObjects] = useState(false);
 
-class App extends React.PureComponent<any, AppState> {
-  private readonly canvasRef: React.RefObject<HTMLCanvasElement>;
-  private readonly video: HTMLVideoElement;
-  private timeUpdateRAFId: number;
-  private isDestroyed: boolean;
-  private videoContext: CanvasRenderingContext2D | null | undefined;
+  let canvasRef: React.RefObject<HTMLCanvasElement> = useRef(null);
+  let video: MutableRefObject<HTMLVideoElement> = useRef(document.createElement('video'));
+  let videoContext: MutableRefObject<CanvasRenderingContext2D | null | undefined> = useRef(null);
+  let timeUpdateRAFId: MutableRefObject<number> = useRef(0);
+  let isDestroyed: MutableRefObject<boolean> = useRef(false);
 
-  constructor(props: any) {
-    super(props);
+  useEffect(() => {
+    video.current.crossOrigin = 'anonymous';
+    video.current.addEventListener('loadeddata', handleLoadedData);
+    video.current.addEventListener('seeked', handleSeeked);
 
-    this.state = {
-      time: 0,
-      isLoaded: false,
-      frame: 1,
-      isPlaying: false,
-      censureType: OBJECTS_CENSURE_TYPE.GAUSS,
-    };
+    video.current.src = videoExample;
 
-    this.canvasRef = React.createRef<HTMLCanvasElement>();
-    this.video = document.createElement('video');
-    this.videoContext = null;
-    this.timeUpdateRAFId = 0;
-    this.isDestroyed = false;
+    const canvas = canvasRef.current;
+    videoContext.current = canvas?.getContext('2d');
+
+    return () => {
+      isDestroyed.current = true;
+
+      video.current.removeEventListener('loadeddata', handleLoadedData);
+      video.current.removeEventListener('seeked', handleSeeked);
+    }
+  }, []);
+
+  useEffect(() => {
+    setFrame(videoUtils.getTimestampIndex(VIDEO_METADATA_INFO, time));
+    drawToCanvas();
+  }, [time]);
+
+  const handleSeeked = () => {
+    setTime(video.current.currentTime);
   }
 
-  componentDidMount() {
-    this.video.crossOrigin = 'anonymous';
-    this.video.addEventListener('loadeddata', this.handleLoadedData);
-    this.video.addEventListener('seeked', this.handleSeeked);
-
-    this.video.src = videoExample;
-
-    const canvas = this.canvasRef.current;
-    this.videoContext = canvas?.getContext('2d');
-  }
-
-  componentWillUnmount() {
-    this.isDestroyed = true;
-
-    this.video.removeEventListener('loadeddata', this.handleLoadedData);
-    this.video.removeEventListener('seeked', this.handleSeeked);
-  }
-
-  handleSeeked = () => {
-    this.processFrame();
-  }
-
-  handleLoadedData = () => {
-    if (!this.video.currentTime) {
-      this.video.currentTime = 0.0001;
+  const handleLoadedData = () => {
+    if (!video.current.currentTime) {
+      video.current.currentTime = 0.0001;
     }
 
-    const canvas = this.canvasRef.current;
+    const canvas = canvasRef.current;
     if (!canvas || !canvas.getContext) return;
 
-    const { width, height } = this.getVideoSize();
+    const { width, height } = getVideoSize();
 
     canvas.width = width;
     canvas.height = height;
 
-    this.drawToCanvas();
-
+    drawToCanvas();
+  
     setTimeout(() => {
-      this.setState({
-        isLoaded: true,
-      });
+      setIsLoaded(true);
     }, 150);
   };
 
-  play = () => {
-    this.video.play();
+  useEffect(() => {
+    setIsFrameHasBlurOutObjects(calcIsFrameHasBlurOutObjects());
+  }, [frame])
 
-    this.setState({
-      isPlaying: true,
-    });
-
-    this.requestTimeUpdate();
+  const play = () => {
+    video.current.play();
+    requestTimeUpdate();
   }
 
-  pause = () => {
-    this.video.pause();
-
-    this.setState({
-      isPlaying: false,
-    });
-
-    this.stopTimeUpdateLoop();
-    this.processFrame();
+  const pause = () => {
+    video.current.pause();
+    stopTimeUpdateLoop();
   };
 
-  getVideoSize() {
+  const getVideoSize = () => {
     return {
-      height: this.video.videoHeight,
-      width: this.video.videoWidth,
+      height: video.current.videoHeight,
+      width: video.current.videoWidth,
     };
   }
 
-  stopTimeUpdateLoop() {
-    window.cancelAnimationFrame(this.timeUpdateRAFId);
+  const stopTimeUpdateLoop = () => {
+    window.cancelAnimationFrame(timeUpdateRAFId.current);
   }
 
-  requestTimeUpdate = () => {
-    if (this.isDestroyed) {
+  const requestTimeUpdate = () => {
+    if (isDestroyed.current) {
       return;
     }
 
-    this.processFrame();
-    this.timeUpdateRAFId = window.requestAnimationFrame(this.requestTimeUpdate);
+    setTime(video.current.currentTime);
+
+    timeUpdateRAFId.current = window.requestAnimationFrame(requestTimeUpdate);
   };
 
-  processFrame() {
-    const { time } = this.state;
+  const drawToCanvas = () => {
+    const canvas = canvasRef.current;
 
-    if (!time) {
-      this.drawToCanvas();
-    }
-
-    this.setState({ time: this.video.currentTime });
-
-    this.setState({
-      frame: videoUtils.getTimestampIndex(VIDEO_METADATA_INFO, time),
-    });
-
-    this.drawToCanvas();
-  }
-
-  drawToCanvas() {
-    const canvas = this.canvasRef.current;
     if (!canvas || !canvas.getContext) return;
 
-    const { width, height } = this.getVideoSize();
-    this.videoContext?.drawImage(this.video, 0, 0, width, height);
+    const { width, height } = getVideoSize();
+ 
+    videoContext?.current?.drawImage(video.current, 0, 0, width, height);
   }
 
-  changeCensureType = (censureType: OBJECTS_CENSURE_TYPE) => () => {
-    this.setState({
-      censureType,
-    });
+  const changeCensureType = (censureType: OBJECTS_CENSURE_TYPE) => () => {
+    setCensureType(censureType);
   }
 
-  isFrameHasBlurOutObjects = () => {
-    const { frame } = this.state;
-
+  const calcIsFrameHasBlurOutObjects = () => {
     // @ts-ignore
     const occurrencesByFrame = occurrences[frame] || {};
 
@@ -176,43 +135,38 @@ class App extends React.PureComponent<any, AppState> {
     return isFrameHasBlurOutObjects;
   }
 
-  render() {
-    const { isLoaded, frame, isPlaying, censureType } = this.state;
-
-    return (
-      <div className="App">
+  return (
+    <div className="App">
+      <div>
         <div>
-          <div>
-            Playback:
-            <button onClick={this.play}>Play</button>
-            <button onClick={this.pause}>Pause</button>
-          </div>
-          <div>
-            Censure:
-            <button onClick={this.changeCensureType(OBJECTS_CENSURE_TYPE.GAUSS)}>Gauss</button>
-            <button onClick={this.changeCensureType(OBJECTS_CENSURE_TYPE.PIXELATE)}>Pixelate with css filter</button>
-            <button onClick={this.changeCensureType(OBJECTS_CENSURE_TYPE.PIXELATE_CANVAS_FILTER)}>Pixelate with canvas filter</button>
-          </div>
+          Playback:
+          <button onClick={play}>Play</button>
+          <button onClick={pause}>Pause</button>
         </div>
-        <div className="canvasWrapper">
-          <canvas ref={this.canvasRef} className="videoCanvas" />
-          {
-            isLoaded && (
-              <ObjectsBlur
-                blurIntensity={BLUR_INTENSITY}
-                censureType={censureType}
-                frameNumber={frame}
-                imageSource={this.canvasRef.current}
-                isFrameHasBlurOutObjects={this.isFrameHasBlurOutObjects()}
-                isPlaying={isPlaying}
-                occurrences={occurrences}
-              />
-            )
-          }
+        <div>
+          Censure:
+          <button onClick={changeCensureType(OBJECTS_CENSURE_TYPE.GAUSS)}>Gauss</button>
+          <button onClick={changeCensureType(OBJECTS_CENSURE_TYPE.PIXELATE)}>Pixelate with css filter</button>
+          <button onClick={changeCensureType(OBJECTS_CENSURE_TYPE.PIXELATE_CANVAS_FILTER)}>Pixelate with canvas filter</button>
         </div>
       </div>
-    );
-  }
+      <div className="canvasWrapper">
+        <canvas ref={canvasRef} className="videoCanvas" />
+        {
+          isLoaded && (
+            <ObjectsBlur
+              blurIntensity={BLUR_INTENSITY}
+              censureType={censureType}
+              frameNumber={frame}
+              imageSource={canvasRef.current}
+              isFrameHasBlurOutObjects={isFrameHasBlurOutObjects}
+              occurrences={occurrences}
+            />
+          )
+        }
+      </div>
+    </div>
+  );
 }
 
 export default App;

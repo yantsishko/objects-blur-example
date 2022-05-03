@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { OBJECTS_CENSURE_TYPE } from '../../constants/objects';
 
@@ -9,94 +9,66 @@ interface ObjectsBlurProps {
   blurIntensity: number;
   isFrameHasBlurOutObjects: boolean;
   frameNumber: number;
-  isPlaying: boolean;
   occurrences: any;
   censureType: OBJECTS_CENSURE_TYPE;
 }
 
-interface ObjectsBlurState {
-  isLoading: boolean;
-}
-
 const PERIMETER_DOWNSIZE_MULTIPLIER = 50;
 
-class ObjectsBlur extends React.PureComponent<ObjectsBlurProps, ObjectsBlurState> {
-  private displayCanvas: HTMLCanvasElement | null;
-  private readonly displayCanvasRef: React.RefObject<HTMLCanvasElement>;
-  private displayContext: any;
-  private downsizeRatio: number;
-  private height: number;
-  private startWidth: number | null;
-  private tmpCanvas: HTMLCanvasElement | null;
-  private readonly tmpCanvasRef: React.RefObject<HTMLCanvasElement>;
-  private tmpContext: any;
-  private width: number;
+function ObjectsBlur({ imageSource, blurIntensity, isFrameHasBlurOutObjects, frameNumber, occurrences, censureType }: ObjectsBlurProps) {
+  let displayCanvas: HTMLCanvasElement | null = null;
+  let displayCanvasRef = React.createRef<HTMLCanvasElement>();
+  let displayContext: any = null;
+  let downsizeRatio: number = 0;
+  let height: number = 0;
+  let width: number = 0;
+  let tmpCanvas: HTMLCanvasElement | null = null;
+  let tmpCanvasRef = React.createRef<HTMLCanvasElement>();
+  let tmpContext: any = null;
+  
 
-  constructor(props: any) {
-    super(props);
+  const [isLoading, setIsLoading] = useState(true);
 
-    this.displayCanvas = null;
-    this.displayCanvasRef = React.createRef<HTMLCanvasElement>();
-    this.downsizeRatio = 0;
-    this.height = 0;
-    this.startWidth = 0;
-    this.tmpCanvas = null;
-    this.tmpCanvasRef = React.createRef<HTMLCanvasElement>();
-    this.width = 0;
+  useEffect(() => {
+    updateBlurLayer();
+    updateObjects();
+  }, [imageSource, blurIntensity, censureType, isFrameHasBlurOutObjects, occurrences, frameNumber]);
 
-    this.state = {
-      isLoading: true,
-    };
-  }
-
-  componentDidMount() {
-    this.startWidth = this.tmpCanvasRef.current && this.tmpCanvasRef.current.width;
-    this.updateBlurLayer();
-    this.updateObjects();
-  }
-
-  componentDidUpdate(prevProps: any) {
-    this.updateBlurLayer();
-    this.updateObjects();
-  }
-
-  updateBlurLayer() {
+  function updateBlurLayer() {
     const blurIntensityMax = 100;
     const defaultBlurIntensity = 25;
 
-    const { imageSource, blurIntensity, censureType, isFrameHasBlurOutObjects } = this.props;
-
     if (imageSource === null) return;
 
-    this.tmpCanvas = this.tmpCanvasRef.current;
+    tmpCanvas = tmpCanvasRef.current;
 
-    if (this.tmpCanvas === null) return;
+    if (tmpCanvas === null) return;
 
-    this.width = imageSource.width;
-    this.height = imageSource.height;
+    width = imageSource.width;
+    height = imageSource.height;
 
-    this.tmpContext = this.tmpCanvas.getContext('2d', { alpha: false });
-    this.tmpContext.clearRect(0, 0, this.width, this.height);
-    this.tmpCanvas.width = 1; // hack for quick reset canvas
-    this.tmpCanvas.width = this.width;
-    this.tmpCanvas.height = this.height;
-    this.tmpContext.msImageSmoothingEnabled = false;
-    this.tmpContext.imageSmoothingEnabled = false;
+    tmpContext = tmpCanvas.getContext('2d', { alpha: false });
+    tmpContext.clearRect(0, 0, width, height);
+    tmpCanvas.width = 1; // hack for quick reset canvas
+    tmpCanvas.width = width;
+    tmpCanvas.height = height;
+    tmpContext.msImageSmoothingEnabled = false;
+    tmpContext.imageSmoothingEnabled = false;
 
-    this.displayCanvas = this.displayCanvasRef.current;
+    displayCanvas = displayCanvasRef.current;
 
-    if (this.displayCanvas === null) return;
+    if (displayCanvas === null) return;
 
-    this.displayCanvas.height = this.height;
-    this.displayCanvas.width = this.width;
-    this.displayContext = this.displayCanvas.getContext('2d');
+    displayCanvas.height = height;
+    displayCanvas.width = width;
+    displayContext = displayCanvas.getContext('2d');
 
     if (censureType === OBJECTS_CENSURE_TYPE.GAUSS) {
-      this.displayContext.msImageSmoothingEnabled = true;
-      this.displayContext.imageSmoothingEnabled = true;
+      displayContext.msImageSmoothingEnabled = true;
+      displayContext.imageSmoothingEnabled = true;
     } else {
-      this.displayContext.msImageSmoothingEnabled = false;
-      this.displayContext.imageSmoothingEnabled = false;
+      displayContext.msImageSmoothingEnabled = false;
+      displayContext.imageSmoothingEnabled = false;
     }
 
     if (censureType === OBJECTS_CENSURE_TYPE.PIXELATE || censureType === OBJECTS_CENSURE_TYPE.PIXELATE_CANVAS_FILTER) {
@@ -104,56 +76,56 @@ class ObjectsBlur extends React.PureComponent<ObjectsBlurProps, ObjectsBlurState
 
       if (censureType === OBJECTS_CENSURE_TYPE.PIXELATE_CANVAS_FILTER) {
         // this filter stuck applying pixelization
-        this.tmpContext.filter = `brightness(${brightnessMax - blurIntensity}%)`;
+        tmpContext.filter = `brightness(${brightnessMax - blurIntensity}%)`;
       } else {
         // this is css analogue more faster
-        this.tmpCanvas.style.filter = `brightness(${brightnessMax - blurIntensity}%)`;
+        tmpCanvas.style.filter = `brightness(${brightnessMax - blurIntensity}%)`;
       }
 
       if (isFrameHasBlurOutObjects) {
         const ctx = imageSource.getContext('2d');
 
-        const imgData = ctx && ctx.getImageData(0, 0,  this.width, this.height).data;
+        const imgData = ctx && ctx.getImageData(0, 0,  width, height).data;
 
         if (!imgData) return;
 
-        const perimeter = ( this.width + this.height) * 2;
+        const perimeter = ( width + height) * 2;
         let pixelSize = Math.floor((perimeter / PERIMETER_DOWNSIZE_MULTIPLIER)
           * (blurIntensity / blurIntensityMax));
 
-        for (let row = 0; row < this.height; row += pixelSize) {
-          for (let col = 0; col < this.width; col += pixelSize) {
-            let pixel = (col + ( row * this.width )) * 4;
+        for (let row = 0; row < height; row += pixelSize) {
+          for (let col = 0; col < width; col += pixelSize) {
+            let pixel = (col + ( row * width )) * 4;
 
-            this.tmpContext.fillStyle = `rgba(${imgData[pixel]},${imgData[pixel + 1]},${imgData[pixel + 2]},${imgData[pixel + 3]})`;
-            this.tmpContext.fillRect(col, row, pixelSize, pixelSize);
+            tmpContext.fillStyle = `rgba(${imgData[pixel]},${imgData[pixel + 1]},${imgData[pixel + 2]},${imgData[pixel + 3]})`;
+            tmpContext.fillRect(col, row, pixelSize, pixelSize);
           }
         }
       } else {
-        const halfPerimeter = this.height + this.width;
+        const halfPerimeter = height + width;
 
-        this.downsizeRatio = (halfPerimeter / PERIMETER_DOWNSIZE_MULTIPLIER)
+        downsizeRatio = (halfPerimeter / PERIMETER_DOWNSIZE_MULTIPLIER)
           * (blurIntensity / 100);
 
-        this.tmpContext.drawImage(
+        tmpContext.drawImage(
           imageSource,
-          0, 0, this.width, this.height,
-          0, 0, this.width / this.downsizeRatio, this.height / this.downsizeRatio,
+          0, 0, width, height,
+          0, 0, width / downsizeRatio, height / downsizeRatio,
         );
       }
     } else { // gauss blur
       const brightnessMax = blurIntensityMax + defaultBlurIntensity;
-      this.tmpContext.filter = `blur(${blurIntensity}px) brightness(${brightnessMax - blurIntensity}%)`;
+      tmpContext.filter = `blur(${blurIntensity}px) brightness(${brightnessMax - blurIntensity}%)`;
 
-      this.tmpContext.drawImage(imageSource, 0, 0);
+      tmpContext.drawImage(imageSource, 0, 0);
     }
   }
 
-  updateObjects() {
-    const { blurIntensity, censureType, imageSource, isFrameHasBlurOutObjects, occurrences, frameNumber } = this.props;
+  function updateObjects() {
+    // const { blurIntensity, censureType, imageSource, isFrameHasBlurOutObjects, occurrences, frameNumber } = this.props;
 
-    if (this.tmpCanvas === null) return;
-    if (this.displayCanvas === null) return;
+    if (tmpCanvas === null) return;
+    if (displayCanvas === null) return;
 
     const occurrencesByFrame = occurrences[frameNumber] || {};
 
@@ -175,17 +147,17 @@ class ObjectsBlur extends React.PureComponent<ObjectsBlurProps, ObjectsBlurState
           drawSourceRect = displayRect;
         } else {
           drawSourceRect = {
-            x: occurrence.x / this.downsizeRatio,
-            y: occurrence.y / this.downsizeRatio,
-            w: occurrence.w / this.downsizeRatio,
-            h: occurrence.h / this.downsizeRatio,
+            x: occurrence.x / downsizeRatio,
+            y: occurrence.y / downsizeRatio,
+            w: occurrence.w / downsizeRatio,
+            h: occurrence.h / downsizeRatio,
           };
         }
 
-        this.displayContext.save();
+        displayContext.save();
 
         // draw ellipse
-        this.displayContext.beginPath();
+        displayContext.beginPath();
         const radiusX = displayRect.w / 2;
         const radiusY = displayRect.h / 2;
         const centerX = displayRect.x + radiusX;
@@ -194,7 +166,7 @@ class ObjectsBlur extends React.PureComponent<ObjectsBlurProps, ObjectsBlurState
         const startAngle = 0;
         const endAngle = rotation * 2;
 
-        this.displayContext.ellipse(
+        displayContext.ellipse(
           centerX,
           centerY,
           radiusX,
@@ -203,42 +175,37 @@ class ObjectsBlur extends React.PureComponent<ObjectsBlurProps, ObjectsBlurState
           startAngle,
           endAngle,
         );
-        this.displayContext.closePath();
-        this.displayContext.clip();
+        displayContext.closePath();
+        displayContext.clip();
 
-        this.displayContext.drawImage(
-          occurrence.isBlurOut ? imageSource : this.tmpCanvas,
+        displayContext.drawImage(
+          occurrence.isBlurOut ? imageSource : tmpCanvas,
           drawSourceRect.x, drawSourceRect.y, drawSourceRect.w, drawSourceRect.h,
           displayRect.x, displayRect.y, displayRect.w, displayRect.h,
         );
 
-        this.displayContext.restore();
+        displayContext.restore();
 
       } catch (err) {
         console.log(err);
       }
     });
 
-    this.setState({ isLoading: false });
+    setIsLoading(false);
   }
 
-  render() {
-    const { isLoading } = this.state;
-    const { isFrameHasBlurOutObjects } = this.props;
-
-    return (
-      <div className="container">
-        <canvas
-          ref={this.tmpCanvasRef}
-          className={`canvas ${!isFrameHasBlurOutObjects ? 'hidden' : ''}`}
-        />
-        <canvas
-          ref={this.displayCanvasRef}
-          className={`canvas ${isLoading ? 'hidden' : ''}`}
-        />
-      </div>
-    );
-  }
+  return (
+    <div className="container">
+      <canvas
+        ref={tmpCanvasRef}
+        className={`canvas ${!isFrameHasBlurOutObjects ? 'hidden' : ''}`}
+      />
+      <canvas
+        ref={displayCanvasRef}
+        className={`canvas ${isLoading ? 'hidden' : ''}`}
+      />
+    </div>
+  );
 
 }
 
